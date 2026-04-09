@@ -124,4 +124,4 @@ class DPPythia8Generator : public SHiP::Generator {
 };
 
 #endif  // SHIPGEN_DPPYTHIA8GENERATOR_H_
-q:q€ýa:q
+

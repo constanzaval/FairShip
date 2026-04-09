@@ -23,6 +23,7 @@ it in future.
 ### Fixed
 
 * Add missing SetPaintRadius method and proper beam smearing in DPPPythia8Generator class.
+* Fix CI build warnings: add missing `override` specifiers, fix `Print()` and `Init()` virtual hiding, remove unused `FairShipFields` LinkDef entry
 
 ### Removed
 

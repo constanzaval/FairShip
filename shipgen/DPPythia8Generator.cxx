@@ -5,7 +5,6 @@
 #include "DPPythia8Generator.h"
 
 #include <cmath>
-#include <cmath>
 #include <set>
 #include <vector>
 
@@ -20,7 +19,8 @@
 
 using ShipUnit::cm;
 using ShipUnit::mm;
-using ShipUnit::c_light;
+const Double_t c_light = 2.99792458e+10;  // speed of light in cm/sec (c_light
+                                          // = 2.99792458e+8 * m/s)
 const Int_t debug = 1;
 
 // -----   Default constructor   -------------------------------------------
@@ -31,7 +31,7 @@ DPPythia8Generator::DPPythia8Generator() {
   fDP = 9900015;        // DP  pdg code
   fLmin = 5000. * cm;   // mm minimum  decay position z  ROOT units !
   fLmax = 12000. * cm;  // mm maximum decay position z
-  fFDs = 7.7 / 10.4;  // correction for Pythia6 to match measured Ds production
+  fFDs = 7.7 / 10.4;    // correction for Pythia6 to match measured Ds production
   fpbrem = kFALSE;
   fpbremPDF = 0;
   fsmearBeam = 8 * mm;  // default value for smearing beam (8 mm)
@@ -49,7 +49,7 @@ DPPythia8Generator::DPPythia8Generator() {
 
 void DPPythia8Generator::Print() { fPythia->settings.listAll(); };
 
-// -----   Default constructor   -------------------------------------------
+// -----   Init   ----------------------------------------------------------
 Bool_t DPPythia8Generator::Init() {
   if (fUseRandom1) fRandomEngine = std::make_shared<PyTr1Rng>();
   if (fUseRandom3) fRandomEngine = std::make_shared<PyTr3Rng>();
@@ -74,7 +74,7 @@ Bool_t DPPythia8Generator::Init() {
   } else {
     if (!fpbremPDF) {
       LOG(fatal) << "Failed in retrieving dark photon PDF for production by "
-                    "proton bremstrahlung!";
+                 << "proton bremstrahlung!";
       return kFALSE;
     }
   }
@@ -110,7 +110,10 @@ Bool_t DPPythia8Generator::Init() {
 // -------------------------------------------------------------------------
 
 // -----   Destructor   ----------------------------------------------------
-DPPythia8Generator::~DPPythia8Generator() {}
+DPPythia8Generator::~DPPythia8Generator() {
+  delete fPythia;
+  fPythia = nullptr;
+}
 // -------------------------------------------------------------------------
 
 // -----   Passing the event   ---------------------------------------------
@@ -119,18 +122,20 @@ Bool_t DPPythia8Generator::ReadEvent(FairPrimaryGenerator* cpg) {
   Double_t tp, tS, zp, xp, yp, zS, xS, yS, pz, px, py, e, w;
   Double_t tm, zm, xm, ym, pmz, pmx, pmy, em;
   Int_t im;
-
-  Int_t imN, imtmp, idtmp;
+  Int_t imout;
   Double_t tN, zN, xN, yN, pzN, pxN, pyN, eN;
-  Int_t imout, idpout;
 
   int iDP =
       0;  // index of the chosen DP, also ensures that at least 1 DP is produced
   std::vector<int>
       dec_chain;  // pythia indices of the particles to be stored on the stack
   std::vector<int> dpvec;  // pythia indices of DP particles
- 
+
   do {
+    // clear containers at every retry to avoid mixing different events
+    dec_chain.clear();
+    dpvec.clear();
+
     // bit for proton brem
     if (fpbrem) {
       fPythia->event.reset();
@@ -185,13 +190,23 @@ Bool_t DPPythia8Generator::ReadEvent(FairPrimaryGenerator* cpg) {
       py = fPythia->event[i].py();
       e = fPythia->event[i].e();
       // old decay vertex
-      if (debug > 1)	{
-	  std::cout << " Debug: decay product of A: "
-		    << fPythia->event[fPythia->event[i].daughter1()].id() << " "
-		    << fPythia->event[fPythia->event[i].daughter2()].id()
-		    << std::endl;
+      if (debug > 1) {
+        int id1 = fPythia->event[i].daughter1();
+        int id2 = fPythia->event[i].daughter2();
+        std::cout << " Debug: decay product of A: ";
+        if (id1 > 0)
+          std::cout << fPythia->event[id1].id() << " ";
+        else
+          std::cout << "none ";
+        if (id2 > 0)
+          std::cout << fPythia->event[id2].id();
+        else
+          std::cout << "none";
+        std::cout << std::endl;
+      }
+
       //  new decay vertex
-      Double_t LS = gRandom->Uniform(fLmin/mm, fLmax/mm);  // in mm
+      Double_t LS = gRandom->Uniform(fLmin / mm, fLmax / mm);  // in mm
       Double_t p = TMath::Sqrt(px * px + py * py + pz * pz);
       Double_t lam = LS / p;
       xS = xp + lam * px;
@@ -201,49 +216,37 @@ Bool_t DPPythia8Generator::ReadEvent(FairPrimaryGenerator* cpg) {
       Double_t beta = p / e;
       tS = tp + LS / beta;  // all in Pythia units
       w = TMath::Exp(-LS / (beta * gam * fctau)) *
-          ((fLmax/mm - fLmin/mm) / (beta * gam * fctau));
+          ((fLmax / mm - fLmin / mm) / (beta * gam * fctau));
+
+      // store event[0] first, as requested
+      if (fPythia->event.size() > 0) {
+        zN = fPythia->event[1].zProd();
+        xN = fPythia->event[1].xProd();
+        yN = fPythia->event[1].yProd();
+        pzN = fPythia->event[1].pz();
+        pxN = fPythia->event[1].px();
+        pyN = fPythia->event[1].py();
+        eN = fPythia->event[1].e();
+        tN = fPythia->event[1].tProd();
+
+        cpg->AddTrack(
+            (Int_t)fPythia->event[1].id(), pxN, pyN, pzN, xN * mm + dx,
+            yN * mm + dy, zN * mm, -1, false, eN, tN * mm / c_light,
+            w);  // event[0] is the root of the exported chain
+
+        dec_chain.push_back(0);
+
+        if (debug > 1)
+          std::cout << std::endl
+                    << " insert nucleon ancestor id 0"
+                    << " pdg=" << fPythia->event[1].id() << " pz = " << pzN
+                    << " [GeV], z = " << zN << " [mm] t = " << tN
+                    << " [mm/c]" << std::endl;
+      }
 
       // direct mother of the DP
       im = (Int_t)fPythia->event[i].mother1();
 
-      // look upstream in the mother1 chain for the first proton or neutron
-      imN = -1;
-      imtmp = im;
-      while (imtmp > 0) {
-        idtmp = TMath::Abs(fPythia->event[imtmp].id());
-        if (idtmp == 2212 || idtmp == 2112) {
-          imN = imtmp;
-          break;
-        }
-        imtmp = (Int_t)fPythia->event[imtmp].mother1();
-      }
-
-      // if found, store proton/neutron ancestor first
-      if (imN > 0 && imN != im) {
-        zN = fPythia->event[imN].zProd();
-        xN = fPythia->event[imN].xProd();
-        yN = fPythia->event[imN].yProd();
-        pzN = fPythia->event[imN].pz();
-        pxN = fPythia->event[imN].px();
-        pyN = fPythia->event[imN].py();
-        eN = fPythia->event[imN].e();
-        tN = fPythia->event[imN].tProd();
-
-        cpg->AddTrack(
-            (Int_t)fPythia->event[imN].id(), pxN, pyN, pzN, xN * mm + dx,
-            yN * mm + dy, zN * mm, -1, false, eN, tN * mm / c_light,
-            w);  // proton/neutron ancestor is the root of the exported chain
-
-        dec_chain.push_back(imN);
-
-        if (debug > 1)
-          std::cout << std::endl
-                    << " insert nucleon ancestor id " << imN
-                    << " pdg=" << fPythia->event[imN].id() << " pz = " << pzN
-                    << " [GeV], z = " << zN << " [mm] t = " << tN
-                    << " [mm/c]" << std::endl;
-      }
-      // direct mother of DP
       zm = fPythia->event[im].zProd();
       xm = fPythia->event[im].xProd();
       ym = fPythia->event[im].yProd();
@@ -253,26 +256,22 @@ Bool_t DPPythia8Generator::ReadEvent(FairPrimaryGenerator* cpg) {
       em = fPythia->event[im].e();
       tm = fPythia->event[im].tProd();
 
-      // if nucleon ancestor exists, mother points to track 0
-      imout = -1;
-      if (imN > 0 && imN != im) imout = 0;
+      // mother points to track 0 (event[0]) in the exported chain
+      imout = 0;
 
       cpg->AddTrack(
           (Int_t)fPythia->event[im].id(), pmx, pmy, pmz, xm * mm + dx,
           ym * mm + dy, zm * mm, imout, false, em, tm * mm / c_light,
           w);  // convert pythia's (x,y,z[mm], t[mm/c]) to ([cm], [s])
 
-      // if nucleon ancestor exists, DP points to track 1, otherwise to track 0
-      idpout = 0;
-      if (imN > 0 && imN != im) idpout = 1;
+      // DP points to the direct mother in the exported chain, which is track 1
+      cpg->AddTrack(fDP, px, py, pz, xp * mm + dx, yp * mm + dy, zp * mm, 1,
+                    false, e, tp * mm / c_light, w);
 
-      cpg->AddTrack(fDP, px, py, pz, xp * mm + dx, yp * mm + dy, zp * mm,
-        	      idpout, false, e, tp * mm / c_light, w); 
-     
       // bookkeep the indices of stored particles
       dec_chain.push_back(im);
       dec_chain.push_back(i);
-     
+
       if (debug > 1)
         std::cout << std::endl
                   << " insert mother id " << im
@@ -319,20 +318,11 @@ Bool_t DPPythia8Generator::ReadEvent(FairPrimaryGenerator* cpg) {
   }
 
   // go over daughters and store them on the stack
-  // original code started from +2 because dec_chain contained:
-  //   [mother, DP]
-  // now it can contain:
-  //   [nucleon ancestor, mother, DP]
-  // therefore, if the first stored particle is a proton/neutron,
-  // daughters start from +3; otherwise they start from +2.
-  std::vector<int>::iterator itbeg = dec_chain.begin() + 2;
-  if (dec_chain.size() > 2 &&
-      (TMath::Abs(fPythia->event[dec_chain[0]].id()) == 2212 ||
-       TMath::Abs(fPythia->event[dec_chain[0]].id()) == 2112)) {
-    itbeg = dec_chain.begin() + 3;
-  }
-
-  for (std::vector<int>::iterator it = itbeg; it != dec_chain.end(); ++it) {
+  // dec_chain now contains:
+  //   [event0, mother, DP, daughters...]
+  // so daughters start at +3
+  for (std::vector<int>::iterator it = dec_chain.begin() + 3;
+       it != dec_chain.end(); ++it) {
     // pythia index of the particle to store
     int k = *it;
     // find mother position on the output stack: impy -> im
