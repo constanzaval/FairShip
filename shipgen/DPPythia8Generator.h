@@ -62,6 +62,7 @@ class DPPythia8Generator : public SHiP::Generator {
   void SetLmin(Double_t z) { fLmin = z * 10; };
   void SetLmax(Double_t z) { fLmax = z * 10; };
   void SetSmearBeam(Double_t sb) { fsmearBeam = sb; };
+  void SetPaintRadius(Double_t r) { fPaintBeam = r; };
   void SetfFDs(Double_t z) { fFDs = z; };
   void UseRandom1() {
     fUseRandom1 = kTRUE;
