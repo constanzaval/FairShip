@@ -62,7 +62,7 @@ class DPPythia8Generator : public SHiP::Generator {
   void SetLmin(Double_t z) { fLmin = z * 10; };
   void SetLmax(Double_t z) { fLmax = z * 10; };
   void SetSmearBeam(Double_t sb) { fsmearBeam = sb; };
-  void SetPaintRadius(Double_t r) { fPaintBeam = r; };
+  void SetPaintRadius(Double_t r) { fpaintBeam = r; };
   void SetfFDs(Double_t z) { fFDs = z; };
   void UseRandom1() {
     fUseRandom1 = kTRUE;
@@ -114,6 +114,7 @@ class DPPythia8Generator : public SHiP::Generator {
   Double_t fctau;  // dark photon lifetime
   Double_t fFDs;   // correction for Pythia6 to match measured Ds production
   Double_t fsmearBeam;  // finite beam size
+  Double_t fpaintBeam;
   TFile* fInputFile;    //! pointer to a file
   TTree* fTree;         //!
   Int_t fNevents, fn, fShipEventNr;
