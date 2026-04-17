@@ -5,6 +5,7 @@
 #include "DPPythia8Generator.h"
 
 #include <cmath>
+
 #include "BeamSmearingUtils.h"
 #include "FairPrimaryGenerator.h"
 #include "Pythia8/Pythia.h"
@@ -30,7 +31,7 @@ DPPythia8Generator::DPPythia8Generator() {
   fpbrem = kFALSE;
   fpbremPDF = 0;
   fsmearBeam = 0.8;  // default value for smearing beam (8 mm)
-  fPaintBeam = 5;  // default value for painting beam (5 cm)
+  fPaintBeam = 5;    // default value for painting beam (5 cm)
   fdy = kFALSE;
   fDPminM = 0.5;
   fInputFile = nullptr;
@@ -50,7 +51,6 @@ Bool_t DPPythia8Generator::Init() {
   // fPythiaHadDecay->setRndmEnginePtr(fRandomEngine);
   fn = 0;
 
-
   if (!fpbrem) {
     if (debug) {
       std::cout << "Beam Momentum " << fMom << std::endl;
@@ -67,7 +67,7 @@ Bool_t DPPythia8Generator::Init() {
 
   } else {
     if (!fpbremPDF) {
-         LOG(fatal) << "Failed in retrieving dark photon PDF for production by "
+      LOG(fatal) << "Failed in retrieving dark photon PDF for production by "
                     "proton bremstrahlung!";
       return kFALSE;
     }
@@ -115,14 +115,12 @@ Bool_t DPPythia8Generator::ReadEvent(FairPrimaryGenerator* cpg) {
 
   Int_t im;
 
-
   int iDP =
       0;  // index of the chosen DP, also ensures that at least 1 DP is produced
   std::vector<int>
       dec_chain;  // pythia indices of the particles to be stored on the stack
   std::vector<int> dpvec;  // pythia indices of DP particles
   do {
-
     // bit for proton brem
     if (fpbrem) {
       fPythia->event.reset();
@@ -177,14 +175,12 @@ Bool_t DPPythia8Generator::ReadEvent(FairPrimaryGenerator* cpg) {
       py = fPythia->event[i].py();
       e = fPythia->event[i].e();
       // old decay vertex
-      if (debug)
-	{
-
-	  std::cout << " Debug: decay product of A: "
-		    << fPythia->event[fPythia->event[i].daughter1()].id() << " "
-		    << fPythia->event[fPythia->event[i].daughter2()].id()
-		    << std::endl;
-	}
+      if (debug) {
+        std::cout << " Debug: decay product of A: "
+                  << fPythia->event[fPythia->event[i].daughter1()].id() << " "
+                  << fPythia->event[fPythia->event[i].daughter2()].id()
+                  << std::endl;
+      }
       //  new decay vertex
       Double_t LS = gRandom->Uniform(fLmin, fLmax);  // mm, G4 and Pythia8 units
       Double_t p = TMath::Sqrt(px * px + py * py + pz * pz);
@@ -210,12 +206,12 @@ Bool_t DPPythia8Generator::ReadEvent(FairPrimaryGenerator* cpg) {
       em = fPythia->event[im].e();
       tm = fPythia->event[im].tProd();
 
-      cpg->AddTrack(
-		    (Int_t)fPythia->event[im].id(), pmx, pmy, pmz, (xm + dx) / cm,
-		    (ym + dy) / cm, zm / cm, -1, false, em, tm / cm / c_light,
-		    w);  // convert pythia's (x,y,z[mm], t[mm/c]) to ([cm], [s])
-      cpg->AddTrack(fDP, px, py, pz, (xp + dx) / cm , (yp + dy) / cm, zp / cm, 0,
-		    false, e, tp / cm / c_light, w);
+      cpg->AddTrack((Int_t)fPythia->event[im].id(), pmx, pmy, pmz,
+                    (xm + dx) / cm, (ym + dy) / cm, zm / cm, -1, false, em,
+                    tm / cm / c_light,
+                    w);  // convert pythia's (x,y,z[mm], t[mm/c]) to ([cm], [s])
+      cpg->AddTrack(fDP, px, py, pz, (xp + dx) / cm, (yp + dy) / cm, zp / cm, 0,
+                    false, e, tp / cm / c_light, w);
 
       // bookkeep the indices of stored particles
       dec_chain.push_back(im);
@@ -265,7 +261,6 @@ Bool_t DPPythia8Generator::ReadEvent(FairPrimaryGenerator* cpg) {
     dec_chain.push_back(k);
   }
 
-
   // go over daughters and store them on the stack, starting from 2 to account
   // for DP and its mother
   for (std::vector<int>::iterator it = dec_chain.begin() + 2;
@@ -293,7 +288,6 @@ Bool_t DPPythia8Generator::ReadEvent(FairPrimaryGenerator* cpg) {
     };
     cpg->AddTrack((Int_t)fPythia->event[k].id(), px, py, pz, xS / cm, yS / cm,
                   zS / cm, im, wanttracking, e, tS / cm / c_light, w);
-
   }
   return kTRUE;
 }

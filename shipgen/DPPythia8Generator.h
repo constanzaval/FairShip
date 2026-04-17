@@ -114,8 +114,8 @@ class DPPythia8Generator : public SHiP::Generator {
   Double_t fFDs;   // correction for Pythia6 to match measured Ds production
   Double_t fsmearBeam;  // finite beam size
   Double_t fPaintBeam;
-  TFile* fInputFile;    //! pointer to a file
-  TTree* fTree;         //!
+  TFile* fInputFile;  //! pointer to a file
+  TTree* fTree;       //!
   Int_t fNevents, fn, fShipEventNr;
   Float_t hpx[1], hpy[1], hpz[1], hE[1], hM[1], mpx[1], mpy[1], mpz[1], mE[1],
       hid[1], mid[1];
