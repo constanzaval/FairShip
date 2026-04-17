@@ -22,6 +22,8 @@ it in future.
 
 ### Fixed
 
+* Add missing SetPaintRadius method and proper beam smearing in DPPPythia8Generator class.
+
 ### Removed
 
 ## 26.03 - 2026-03-31
