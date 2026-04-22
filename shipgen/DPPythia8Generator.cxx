@@ -5,22 +5,21 @@
 #include "DPPythia8Generator.h"
 
 #include <cmath>
-#include <cmath>
 #include <set>
 #include <vector>
 
 #include "BeamSmearingUtils.h"
 #include "FairPrimaryGenerator.h"
 #include "Pythia8/Pythia.h"
+#include "ShipUnit.h"
 #include "TDatabasePDG.h"  // for TDatabasePDG
 #include "TMath.h"
 #include "TROOT.h"
 #include "TSystem.h"
-#include "ShipUnit.h"
 
+using ShipUnit::c_light;
 using ShipUnit::cm;
 using ShipUnit::mm;
-using ShipUnit::c_light;
 const Int_t debug = 1;
 
 // -----   Default constructor   -------------------------------------------
@@ -129,7 +128,7 @@ Bool_t DPPythia8Generator::ReadEvent(FairPrimaryGenerator* cpg) {
   std::vector<int>
       dec_chain;  // pythia indices of the particles to be stored on the stack
   std::vector<int> dpvec;  // pythia indices of DP particles
- 
+
   do {
     // bit for proton brem
     if (fpbrem) {
@@ -185,187 +184,189 @@ Bool_t DPPythia8Generator::ReadEvent(FairPrimaryGenerator* cpg) {
       py = fPythia->event[i].py();
       e = fPythia->event[i].e();
       // old decay vertex
-      if (debug > 1)	{
-	  std::cout << " Debug: decay product of A: "
-		    << fPythia->event[fPythia->event[i].daughter1()].id() << " "
-		    << fPythia->event[fPythia->event[i].daughter2()].id()
-		    << std::endl;
-      //  new decay vertex
-      Double_t LS = gRandom->Uniform(fLmin/mm, fLmax/mm);  // in mm
-      Double_t p = TMath::Sqrt(px * px + py * py + pz * pz);
-      Double_t lam = LS / p;
-      xS = xp + lam * px;
-      yS = yp + lam * py;
-      zS = zp + lam * pz;
-      Double_t gam = e / TMath::Sqrt(e * e - p * p);
-      Double_t beta = p / e;
-      tS = tp + LS / beta;  // all in Pythia units
-      w = TMath::Exp(-LS / (beta * gam * fctau)) *
-          ((fLmax/mm - fLmin/mm) / (beta * gam * fctau));
+      if (debug > 1) {
+        std::cout << " Debug: decay product of A: "
+                  << fPythia->event[fPythia->event[i].daughter1()].id() << " "
+                  << fPythia->event[fPythia->event[i].daughter2()].id()
+                  << std::endl;
+        //  new decay vertex
+        Double_t LS = gRandom->Uniform(fLmin / mm, fLmax / mm);  // in mm
+        Double_t p = TMath::Sqrt(px * px + py * py + pz * pz);
+        Double_t lam = LS / p;
+        xS = xp + lam * px;
+        yS = yp + lam * py;
+        zS = zp + lam * pz;
+        Double_t gam = e / TMath::Sqrt(e * e - p * p);
+        Double_t beta = p / e;
+        tS = tp + LS / beta;  // all in Pythia units
+        w = TMath::Exp(-LS / (beta * gam * fctau)) *
+            ((fLmax / mm - fLmin / mm) / (beta * gam * fctau));
 
-      // direct mother of the DP
-      im = (Int_t)fPythia->event[i].mother1();
+        // direct mother of the DP
+        im = (Int_t)fPythia->event[i].mother1();
 
-      // look upstream in the mother1 chain for the first proton or neutron
-      imN = -1;
-      imtmp = im;
-      while (imtmp > 0) {
-        idtmp = TMath::Abs(fPythia->event[imtmp].id());
-        if (idtmp == 2212 || idtmp == 2112) {
-          imN = imtmp;
-          break;
+        // look upstream in the mother1 chain for the first proton or neutron
+        imN = -1;
+        imtmp = im;
+        while (imtmp > 0) {
+          idtmp = TMath::Abs(fPythia->event[imtmp].id());
+          if (idtmp == 2212 || idtmp == 2112) {
+            imN = imtmp;
+            break;
+          }
+          imtmp = (Int_t)fPythia->event[imtmp].mother1();
         }
-        imtmp = (Int_t)fPythia->event[imtmp].mother1();
-      }
 
-      // if found, store proton/neutron ancestor first
-      if (imN > 0 && imN != im) {
-        zN = fPythia->event[imN].zProd();
-        xN = fPythia->event[imN].xProd();
-        yN = fPythia->event[imN].yProd();
-        pzN = fPythia->event[imN].pz();
-        pxN = fPythia->event[imN].px();
-        pyN = fPythia->event[imN].py();
-        eN = fPythia->event[imN].e();
-        tN = fPythia->event[imN].tProd();
+        // if found, store proton/neutron ancestor first
+        if (imN > 0 && imN != im) {
+          zN = fPythia->event[imN].zProd();
+          xN = fPythia->event[imN].xProd();
+          yN = fPythia->event[imN].yProd();
+          pzN = fPythia->event[imN].pz();
+          pxN = fPythia->event[imN].px();
+          pyN = fPythia->event[imN].py();
+          eN = fPythia->event[imN].e();
+          tN = fPythia->event[imN].tProd();
+
+          cpg->AddTrack(
+              (Int_t)fPythia->event[imN].id(), pxN, pyN, pzN, xN * mm + dx,
+              yN * mm + dy, zN * mm, -1, false, eN, tN * mm / c_light,
+              w);  // proton/neutron ancestor is the root of the exported chain
+
+          dec_chain.push_back(imN);
+
+          if (debug > 1)
+            std::cout << std::endl
+                      << " insert nucleon ancestor id " << imN
+                      << " pdg=" << fPythia->event[imN].id() << " pz = " << pzN
+                      << " [GeV], z = " << zN << " [mm] t = " << tN << " [mm/c]"
+                      << std::endl;
+        }
+        // direct mother of DP
+        zm = fPythia->event[im].zProd();
+        xm = fPythia->event[im].xProd();
+        ym = fPythia->event[im].yProd();
+        pmz = fPythia->event[im].pz();
+        pmx = fPythia->event[im].px();
+        pmy = fPythia->event[im].py();
+        em = fPythia->event[im].e();
+        tm = fPythia->event[im].tProd();
+
+        // if nucleon ancestor exists, mother points to track 0
+        imout = -1;
+        if (imN > 0 && imN != im) imout = 0;
 
         cpg->AddTrack(
-            (Int_t)fPythia->event[imN].id(), pxN, pyN, pzN, xN * mm + dx,
-            yN * mm + dy, zN * mm, -1, false, eN, tN * mm / c_light,
-            w);  // proton/neutron ancestor is the root of the exported chain
+            (Int_t)fPythia->event[im].id(), pmx, pmy, pmz, xm * mm + dx,
+            ym * mm + dy, zm * mm, imout, false, em, tm * mm / c_light,
+            w);  // convert pythia's (x,y,z[mm], t[mm/c]) to ([cm], [s])
 
-        dec_chain.push_back(imN);
+        // if nucleon ancestor exists, DP points to track 1, otherwise to track
+        // 0
+        idpout = 0;
+        if (imN > 0 && imN != im) idpout = 1;
+
+        cpg->AddTrack(fDP, px, py, pz, xp * mm + dx, yp * mm + dy, zp * mm,
+                      idpout, false, e, tp * mm / c_light, w);
+
+        // bookkeep the indices of stored particles
+        dec_chain.push_back(im);
+        dec_chain.push_back(i);
 
         if (debug > 1)
           std::cout << std::endl
-                    << " insert nucleon ancestor id " << imN
-                    << " pdg=" << fPythia->event[imN].id() << " pz = " << pzN
-                    << " [GeV], z = " << zN << " [mm] t = " << tN
+                    << " insert mother id " << im
+                    << " pdg=" << fPythia->event[im].id() << " pmz = " << pmz
+                    << " [GeV],  zm = " << zm << " [mm] tm = " << tm
                     << " [mm/c]" << std::endl;
+        if (debug > 1)
+          std::cout << " ----> insert DP id " << i << " pdg=" << fDP
+                    << " pz = " << pz << " [GeV] zp = " << zp
+                    << " [mm] tp = " << tp << " [mm/c]" << std::endl;
+        iDP = i;
       }
-      // direct mother of DP
-      zm = fPythia->event[im].zProd();
-      xm = fPythia->event[im].xProd();
-      ym = fPythia->event[im].yProd();
-      pmz = fPythia->event[im].pz();
-      pmx = fPythia->event[im].px();
-      pmy = fPythia->event[im].py();
-      em = fPythia->event[im].e();
-      tm = fPythia->event[im].tProd();
-
-      // if nucleon ancestor exists, mother points to track 0
-      imout = -1;
-      if (imN > 0 && imN != im) imout = 0;
-
-      cpg->AddTrack(
-          (Int_t)fPythia->event[im].id(), pmx, pmy, pmz, xm * mm + dx,
-          ym * mm + dy, zm * mm, imout, false, em, tm * mm / c_light,
-          w);  // convert pythia's (x,y,z[mm], t[mm/c]) to ([cm], [s])
-
-      // if nucleon ancestor exists, DP points to track 1, otherwise to track 0
-      idpout = 0;
-      if (imN > 0 && imN != im) idpout = 1;
-
-      cpg->AddTrack(fDP, px, py, pz, xp * mm + dx, yp * mm + dy, zp * mm,
-        	      idpout, false, e, tp * mm / c_light, w); 
-     
-      // bookkeep the indices of stored particles
-      dec_chain.push_back(im);
-      dec_chain.push_back(i);
-     
-      if (debug > 1)
-        std::cout << std::endl
-                  << " insert mother id " << im
-                  << " pdg=" << fPythia->event[im].id() << " pmz = " << pmz
-                  << " [GeV],  zm = " << zm << " [mm] tm = " << tm << " [mm/c]"
-                  << std::endl;
-      if (debug > 1)
-        std::cout << " ----> insert DP id " << i << " pdg=" << fDP
-                  << " pz = " << pz << " [GeV] zp = " << zp
-                  << " [mm] tp = " << tp << " [mm/c]" << std::endl;
-      iDP = i;
     }
-  } while (iDP ==
+    while (iDP ==
            0);  // ----------- avoid rare empty events w/o any DP's produced
 
-  if (fShipEventNr % 100 == 0) {
-    LOGF(info, "ship event %i / pythia event-nr %i", fShipEventNr, fn);
-  }
-  fShipEventNr += 1;
-  // fill a container with pythia indices of the DP decay chain
-  if (debug > 1) std::cout << "Filling daughter particles" << std::endl;
-  // if (!hadDecay){
-  for (int k = 0; k < fPythia->event.size(); k++) {
-    // if daughter of DP, copy
-    if (debug > 1)
-      std::cout << k << " pdg =" << fPythia->event[k].id() << " mum "
-                << fPythia->event[k].mother1() << std::endl;
-    im = fPythia->event[k].mother1();
-    while (im > 0) {
-      if (im == iDP) {
-        break;
-      }  // pick the decay products of only 1 chosen DP
-      // if ( abs(fPythia->event[im].id())==fDP && im == iDP ){break;}
-      else {
-        im = fPythia->event[im].mother1();
+    if (fShipEventNr % 100 == 0) {
+      LOGF(info, "ship event %i / pythia event-nr %i", fShipEventNr, fn);
+    }
+    fShipEventNr += 1;
+    // fill a container with pythia indices of the DP decay chain
+    if (debug > 1) std::cout << "Filling daughter particles" << std::endl;
+    // if (!hadDecay){
+    for (int k = 0; k < fPythia->event.size(); k++) {
+      // if daughter of DP, copy
+      if (debug > 1)
+        std::cout << k << " pdg =" << fPythia->event[k].id() << " mum "
+                  << fPythia->event[k].mother1() << std::endl;
+      im = fPythia->event[k].mother1();
+      while (im > 0) {
+        if (im == iDP) {
+          break;
+        }  // pick the decay products of only 1 chosen DP
+        // if ( abs(fPythia->event[im].id())==fDP && im == iDP ){break;}
+        else {
+          im = fPythia->event[im].mother1();
+        }
       }
+      if (im < 1) {
+        if (debug > 1) std::cout << "reject" << std::endl;
+        continue;
+      }
+      if (debug > 1) std::cout << "accept" << std::endl;
+      dec_chain.push_back(k);
     }
-    if (im < 1) {
-      if (debug > 1) std::cout << "reject" << std::endl;
-      continue;
+
+    // go over daughters and store them on the stack
+    // original code started from +2 because dec_chain contained:
+    //   [mother, DP]
+    // now it can contain:
+    //   [nucleon ancestor, mother, DP]
+    // therefore, if the first stored particle is a proton/neutron,
+    // daughters start from +3; otherwise they start from +2.
+    std::vector<int>::iterator itbeg = dec_chain.begin() + 2;
+    if (dec_chain.size() > 2 &&
+        (TMath::Abs(fPythia->event[dec_chain[0]].id()) == 2212 ||
+         TMath::Abs(fPythia->event[dec_chain[0]].id()) == 2112)) {
+      itbeg = dec_chain.begin() + 3;
     }
-    if (debug > 1) std::cout << "accept" << std::endl;
-    dec_chain.push_back(k);
-  }
 
-  // go over daughters and store them on the stack
-  // original code started from +2 because dec_chain contained:
-  //   [mother, DP]
-  // now it can contain:
-  //   [nucleon ancestor, mother, DP]
-  // therefore, if the first stored particle is a proton/neutron,
-  // daughters start from +3; otherwise they start from +2.
-  std::vector<int>::iterator itbeg = dec_chain.begin() + 2;
-  if (dec_chain.size() > 2 &&
-      (TMath::Abs(fPythia->event[dec_chain[0]].id()) == 2212 ||
-       TMath::Abs(fPythia->event[dec_chain[0]].id()) == 2112)) {
-    itbeg = dec_chain.begin() + 3;
-  }
+    for (std::vector<int>::iterator it = itbeg; it != dec_chain.end(); ++it) {
+      // pythia index of the particle to store
+      int k = *it;
+      // find mother position on the output stack: impy -> im
+      int impy = fPythia->event[k].mother1();
+      std::vector<int>::iterator itm =
+          std::find(dec_chain.begin(), dec_chain.end(), impy);
+      im = -1;  // safety
+      if (itm != dec_chain.end())
+        im = itm - dec_chain.begin();  // convert iterator into sequence number
 
-  for (std::vector<int>::iterator it = itbeg; it != dec_chain.end(); ++it) {
-    // pythia index of the particle to store
-    int k = *it;
-    // find mother position on the output stack: impy -> im
-    int impy = fPythia->event[k].mother1();
-    std::vector<int>::iterator itm =
-        std::find(dec_chain.begin(), dec_chain.end(), impy);
-    im = -1;  // safety
-    if (itm != dec_chain.end())
-      im = itm - dec_chain.begin();  // convert iterator into sequence number
-
-    Bool_t wanttracking = false;
-    if (fPythia->event[k].isFinal()) {
-      wanttracking = true;
+      Bool_t wanttracking = false;
+      if (fPythia->event[k].isFinal()) {
+        wanttracking = true;
+      }
+      pz = fPythia->event[k].pz();
+      px = fPythia->event[k].px();
+      py = fPythia->event[k].py();
+      e = fPythia->event[k].e();
+      if (fextFile) {
+        im += 1;
+      };
+      cpg->AddTrack((Int_t)fPythia->event[k].id(), px, py, pz, xS * mm, yS * mm,
+                    zS * mm, im, wanttracking, e, tS * mm / c_light, w);
     }
-    pz = fPythia->event[k].pz();
-    px = fPythia->event[k].px();
-    py = fPythia->event[k].py();
-    e = fPythia->event[k].e();
-    if (fextFile) {
-      im += 1;
-    };
-    cpg->AddTrack((Int_t)fPythia->event[k].id(), px, py, pz, xS * mm, yS * mm,
-                  zS * mm, im, wanttracking, e, tS * mm / c_light, w);
+    return kTRUE;
   }
-  return kTRUE;
-}
-// -------------------------------------------------------------------------
-void DPPythia8Generator::SetParameters(char* par) {
-  // Set Parameters
-  fPythia->readString(par);
-  if (debug) {
-    std::cout << "fPythia->readString(\"" << par << "\")" << std::endl;
+  // -------------------------------------------------------------------------
+  void DPPythia8Generator::SetParameters(char* par) {
+    // Set Parameters
+    fPythia->readString(par);
+    if (debug) {
+      std::cout << "fPythia->readString(\"" << par << "\")" << std::endl;
+    }
   }
-}
 
-// -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
