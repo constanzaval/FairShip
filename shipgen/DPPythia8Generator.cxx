@@ -11,11 +11,11 @@
 #include "BeamSmearingUtils.h"
 #include "FairPrimaryGenerator.h"
 #include "Pythia8/Pythia.h"
+#include "ShipUnit.h"
 #include "TDatabasePDG.h"  // for TDatabasePDG
 #include "TMath.h"
 #include "TROOT.h"
 #include "TSystem.h"
-#include "ShipUnit.h"
 
 using ShipUnit::cm;
 using ShipUnit::mm;
@@ -31,7 +31,7 @@ DPPythia8Generator::DPPythia8Generator() {
   fDP = 9900015;        // DP  pdg code
   fLmin = 5000. * cm;   // mm minimum  decay position z  ROOT units !
   fLmax = 12000. * cm;  // mm maximum decay position z
-  fFDs = 7.7 / 10.4;    // correction for Pythia6 to match measured Ds production
+  fFDs = 7.7 / 10.4;  // correction for Pythia6 to match measured Ds production
   fpbrem = kFALSE;
   fpbremPDF = 0;
   fsmearBeam = 8 * mm;  // default value for smearing beam (8 mm)
@@ -229,10 +229,10 @@ Bool_t DPPythia8Generator::ReadEvent(FairPrimaryGenerator* cpg) {
         eN = fPythia->event[1].e();
         tN = fPythia->event[1].tProd();
 
-        cpg->AddTrack(
-            (Int_t)fPythia->event[1].id(), pxN, pyN, pzN, xN * mm + dx,
-            yN * mm + dy, zN * mm, -1, false, eN, tN * mm / c_light,
-            w);  // event[0] is the root of the exported chain
+        cpg->AddTrack((Int_t)fPythia->event[1].id(), pxN, pyN, pzN,
+                      xN * mm + dx, yN * mm + dy, zN * mm, -1, false, eN,
+                      tN * mm / c_light,
+                      w);  // event[0] is the root of the exported chain
 
         dec_chain.push_back(0);
 
@@ -240,8 +240,8 @@ Bool_t DPPythia8Generator::ReadEvent(FairPrimaryGenerator* cpg) {
           std::cout << std::endl
                     << " insert nucleon ancestor id 0"
                     << " pdg=" << fPythia->event[1].id() << " pz = " << pzN
-                    << " [GeV], z = " << zN << " [mm] t = " << tN
-                    << " [mm/c]" << std::endl;
+                    << " [GeV], z = " << zN << " [mm] t = " << tN << " [mm/c]"
+                    << std::endl;
       }
 
       // direct mother of the DP
@@ -259,10 +259,9 @@ Bool_t DPPythia8Generator::ReadEvent(FairPrimaryGenerator* cpg) {
       // mother points to track 0 (event[0]) in the exported chain
       imout = 0;
 
-      cpg->AddTrack(
-          (Int_t)fPythia->event[im].id(), pmx, pmy, pmz, xm * mm + dx,
-          ym * mm + dy, zm * mm, imout, false, em, tm * mm / c_light,
-          w);  // convert pythia's (x,y,z[mm], t[mm/c]) to ([cm], [s])
+      cpg->AddTrack((Int_t)fPythia->event[im].id(), pmx, pmy, pmz, xm * mm + dx,
+                    ym * mm + dy, zm * mm, imout, false, em, tm * mm / c_light,
+                    w);  // convert pythia's (x,y,z[mm], t[mm/c]) to ([cm], [s])
 
       // DP points to the direct mother in the exported chain, which is track 1
       cpg->AddTrack(fDP, px, py, pz, xp * mm + dx, yp * mm + dy, zp * mm, 1,

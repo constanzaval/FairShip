@@ -88,7 +88,11 @@ genie_parser.add_argument(
     help="Genie neutrino end z position (default=3180.4350 cm)",
 )
 # === End of Genie subcommand ===
-parser.add_argument("-A", help="b: signal from b, c: from c (default), bc: from Bc, inclusive, or for dark photon: meson,pbrem,qcd", default="c")
+parser.add_argument(
+    "-A",
+    help="b: signal from b, c: from c (default), bc: from Bc, inclusive, or for dark photon: meson,pbrem,qcd",
+    default="c",
+)
 parser.add_argument(
     "--NuRadio",
     dest="nuradio",
