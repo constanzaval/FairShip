@@ -187,16 +187,20 @@ class ShipDigiReco:
 
         n_too_few_hits = 0
         n_too_few_stations = 0
-        n_prefit_fail = 0
-        n_fit_fail = 0
-        n_postfit_fail = 0
-        n_no_state = 0
-        n_no_ndf = 0
 
         for atrack in hitPosLists:
             if atrack < 0:
                 continue  # these are hits not assigned to MC track because low E cut
-            pdg = 13  # assume all tracks are muons
+            # Determine charge sign from bending between stations 1-2 and 3-4.
+            # The slope difference dk = k_y34 - k_y12 encodes the charge:
+            # dk > 0 → positive charge (mu+, pi+), dk < 0 → negative charge (mu-, pi-)
+            params = trackParams.get(atrack, {})
+            k_y12 = params.get("k_y12")
+            k_y34 = params.get("k_y34")
+            if k_y12 is not None and k_y34 is not None:
+                pdg = -13 if k_y34 > k_y12 else 13
+            else:
+                pdg = 13
             meas = hitPosLists[atrack]
             detIDs = hit_detector_ids[atrack]
             nM = len(meas)
@@ -212,93 +216,79 @@ class ShipDigiReco:
             # Seed state: use PatRec track parameters when available
             posM, momM = self._compute_seed_state(atrack, meas, trackParams)
 
-            # approximate covariance
-            covM = ROOT.TMatrixDSym(6)
-            resolution = self.sigma_spatial
-            if global_variables.withT0:
-                resolution *= 1.4  # worse resolution due to t0 estimate
-            for i in range(3):
-                covM[i][i] = resolution * resolution
-            covM[0][0] = resolution * resolution * 100.0
-            for i in range(3, 6):
-                covM[i][i] = ROOT.TMath.Power(resolution / nM / ROOT.TMath.Sqrt(3), 2)
-                # trackrep
-            rep = ROOT.genfit.RKTrackRep(pdg)
-            # smeared start state
-            stateSmeared = ROOT.genfit.MeasuredStateOnPlane(rep)
-            rep.setPosMomCov(stateSmeared, posM, momM, covM)
-            # create track
-            seedState = ROOT.TVectorD(6)
-            seedCov = ROOT.TMatrixDSym(6)
-            rep.get6DStateCov(stateSmeared, seedState, seedCov)
-            theTrack = ROOT.genfit.Track(rep, seedState, seedCov)
-            hitCov = ROOT.TMatrixDSym(7)
-            hitCov[6][6] = resolution * resolution
-            hitID = 0
-            for m, detID in zip(meas, detIDs):
-                tp = ROOT.genfit.TrackPoint(theTrack)  # note how the point is told which track it belongs to
-                measurement = ROOT.genfit.WireMeasurement(
-                    m, hitCov, detID, hitID, tp
-                )  # the measurement is told which trackpoint it belongs to
-                measurement.setMaxDistance(
-                    global_variables.ShipGeo.strawtubes_geo.outer_straw_diameter / 2.0
-                    - global_variables.ShipGeo.strawtubes_geo.wall_thickness
-                )
-                tp.addRawMeasurement(measurement)  # package measurement in the TrackPoint
-                theTrack.insertPoint(tp)  # add point to Track
-                hitID += 1
-            trackCandidates.append([theTrack, atrack])
+            # Try both charge hypotheses, keep the one with better chi2/NDF
+            best_track = None
+            best_chi2ndf = float("inf")
+            for try_pdg in [pdg, -pdg]:
+                # approximate covariance
+                covM = ROOT.TMatrixDSym(6)
+                resolution = self.sigma_spatial
+                if global_variables.withT0:
+                    resolution *= 1.4  # worse resolution due to t0 estimate
+                for i in range(3):
+                    covM[i][i] = resolution * resolution
+                covM[0][0] = resolution * resolution * 100.0
+                for i in range(3, 6):
+                    covM[i][i] = ROOT.TMath.Power(resolution / nM / ROOT.TMath.Sqrt(3), 2)
+                rep = ROOT.genfit.RKTrackRep(try_pdg)
+                stateSmeared = ROOT.genfit.MeasuredStateOnPlane(rep)
+                rep.setPosMomCov(stateSmeared, posM, momM, covM)
+                seedState = ROOT.TVectorD(6)
+                seedCov = ROOT.TMatrixDSym(6)
+                rep.get6DStateCov(stateSmeared, seedState, seedCov)
+                theTrack = ROOT.genfit.Track(rep, seedState, seedCov)
+                hitCov = ROOT.TMatrixDSym(7)
+                hitCov[6][6] = resolution * resolution
+                hitID = 0
+                for m, detID in zip(meas, detIDs, strict=True):
+                    tp = ROOT.genfit.TrackPoint(theTrack)
+                    measurement = ROOT.genfit.WireMeasurement(m, hitCov, detID, hitID, tp)
+                    measurement.setMaxDistance(
+                        global_variables.ShipGeo.strawtubes_geo.outer_straw_diameter / 2.0
+                        - global_variables.ShipGeo.strawtubes_geo.wall_thickness
+                    )
+                    tp.addRawMeasurement(measurement)
+                    theTrack.insertPoint(tp)
+                    hitID += 1
+                # Fit this hypothesis
+                try:
+                    theTrack.checkConsistency()
+                except ROOT.genfit.Exception:
+                    continue
+                try:
+                    self.fitter.processTrack(theTrack)
+                except Exception as e:
+                    logger.debug("Failed to processTrack for hypothesis %d: %s", try_pdg, e)
+                    continue
+                try:
+                    theTrack.checkConsistency()
+                except ROOT.genfit.Exception:
+                    logger.debug("Track inconsistent after fit for hypothesis %d", try_pdg)
+                    continue
+                try:
+                    fittedState = theTrack.getFittedState()
+                    fittedState.getMomMag()
+                except Exception as e:
+                    logger.debug("Failed to getFittedState/getMomMag for hypothesis %d: %s", try_pdg, e)
+                    continue
+                fitStatus = theTrack.getFitStatus()
+                if not fitStatus.isFitConverged():
+                    continue
+                nmeas = fitStatus.getNdf()
+                if nmeas <= 0:
+                    continue
+                chi2ndf = fitStatus.getChi2() / nmeas
+                if chi2ndf < best_chi2ndf:
+                    best_chi2ndf = chi2ndf
+                    best_track = theTrack
+            if best_track is not None:
+                trackCandidates.append((best_track, atrack))
 
-        for entry in trackCandidates:
-            # check
-            atrack = entry[1]
-            theTrack = entry[0]
-            try:
-                theTrack.checkConsistency()
-            except ROOT.genfit.Exception as e:
-                n_prefit_fail += 1
-                logger.warning("Problem with track before fit, not consistent %s %s", atrack, theTrack)
-                logger.warning(e.what())
-                ut.reportError(e)
-            # do the fit
-            try:
-                self.fitter.processTrack(theTrack)  # processTrackWithRep(theTrack,rep,True)
-            except Exception:
-                n_fit_fail += 1
-                if global_variables.debug:
-                    print("genfit failed to fit track")
-                error = "genfit failed to fit track"
-                ut.reportError(error)
-                continue
-            # check
-            try:
-                theTrack.checkConsistency()
-            except ROOT.genfit.Exception as e:
-                n_postfit_fail += 1
-                if global_variables.debug:
-                    print("Problem with track after fit, not consistent", atrack, theTrack)
-                    print(e.what())
-                error = "Problem with track after fit, not consistent"
-                ut.reportError(error)
-            try:
-                fittedState = theTrack.getFittedState()
-                fittedState.getMomMag()
-            except Exception:
-                n_no_state += 1
-                error = "Problem with fittedstate"
-                ut.reportError(error)
-                continue
+        for theTrack, atrack in trackCandidates:
+            # Tracks are already fitted from the dual-hypothesis loop above
             fitStatus = theTrack.getFitStatus()
-            try:
-                fitStatus.isFitConverged()
-            except ROOT.genfit.Exception:
-                error = "Fit not converged"
-                ut.reportError(error)
-            nmeas = fitStatus.getNdf()
+            nmeas = fitStatus.getNdf()  # guaranteed > 0 by hypothesis loop filter
             global_variables.h["nmeas"].Fill(nmeas)
-            if nmeas <= 0:
-                n_no_ndf += 1
-                continue
             chi2 = fitStatus.getChi2() / nmeas
             global_variables.h["chi2"].Fill(chi2)
             # make track persistent
@@ -323,17 +313,10 @@ class ShipDigiReco:
             self.fTrackletsArray.push_back(aTracklet)
 
         logger.debug(
-            "findTracks: %d candidates, %d too few hits, %d too few stations, "
-            "%d prefit fail, %d fit fail, %d postfit fail, %d no state, "
-            "%d no NDF, %d fitted tracks saved",
+            "findTracks: %d candidates, %d too few hits, %d too few stations, %d fitted tracks saved",
             len(hitPosLists),
             n_too_few_hits,
             n_too_few_stations,
-            n_prefit_fail,
-            n_fit_fail,
-            n_postfit_fail,
-            n_no_state,
-            n_no_ndf,
             len(self.fGenFitArray),
         )
 
@@ -349,19 +332,24 @@ class ShipDigiReco:
 
         When PatRec track parameters (k_y, b_y) are available, use them
         to place the seed at the first hit's Z with the correct Y position
-        and momentum direction. Otherwise fall back to the default seed
-        at the decay vessel centre.
+        and momentum direction. Prefers station 1-2 parameters, falls back
+        to station 3-4, then to a geometry-free default at the first hit.
         """
         params = trackParams.get(atrack)
-        if params and params.get("k_y12") is not None:
-            # Use station 1-2 parameters to seed near the first measurement
-            k_y = params["k_y12"]
-            b_y = params["b_y12"]
-            # Seed Z at the first measurement's Z coordinate
-            z_seed = meas[0][2]  # z is the 3rd element of the TVectorD
+        k_y = None
+        b_y = None
+        if params:
+            if params.get("k_y12") is not None and params.get("b_y12") is not None:
+                k_y = params["k_y12"]
+                b_y = params["b_y12"]
+            elif params.get("k_y34") is not None and params.get("b_y34") is not None:
+                k_y = params["k_y34"]
+                b_y = params["b_y34"]
+
+        z_seed = meas[0][2]  # z is the 3rd element of the TVectorD
+        if k_y is not None:
             y_seed = k_y * z_seed + b_y
             posM = ROOT.TVector3(0, y_seed, z_seed)
-            # Use slope as py/pz ratio; assume 3 GeV total momentum
             p_total = 3.0 * u.GeV
             pz = p_total / ROOT.TMath.Sqrt(1.0 + k_y * k_y)
             py = k_y * pz
@@ -375,7 +363,7 @@ class ShipDigiReco:
                 pz,
             )
         else:
-            posM = ROOT.TVector3(0, 0, 5812.0)  # decay vessel centre
+            posM = ROOT.TVector3(0, 0, z_seed)
             momM = ROOT.TVector3(0, 0, 3.0 * u.GeV)
         return posM, momM
 

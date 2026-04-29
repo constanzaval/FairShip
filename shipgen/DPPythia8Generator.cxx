@@ -169,16 +169,25 @@ Bool_t DPPythia8Generator::ReadEvent(FairPrimaryGenerator* cpg) {
     iDP = dpvec.size();
     fnDPtot += iDP;
     if (iDP == 0) {
-      // fLogger->Info(MESSAGE_ORIGIN,"Event without DP. Retry.");
-      // fPythia->event.list();
-      fnRetries +=
-          1;  // can happen if phasespace does not allow meson to decay to DP
+      fnRetries += 1;
     } else {
-      // for mesons, could have more than one ... but for DY prod, need to take
-      // the last one... int r =  int( gRandom->Uniform(0,iDP) );
-      int r = iDP - 1;
-
-      int i = dpvec[r];
+      // filter DPs by vessel acceptance
+      std::vector<int> accepted;
+      for (int idx : dpvec) {
+        if (IsInVesselAcceptance(fPythia->event[idx].px(),
+                                 fPythia->event[idx].py(),
+                                 fPythia->event[idx].pz())) {
+          accepted.push_back(idx);
+        }
+      }
+      if (accepted.empty()) {
+        iDP = 0;
+        dpvec.clear();
+        fnGeoRejects += 1;
+        continue;
+      }
+      int r = static_cast<int>(gRandom->Uniform(0, accepted.size()));
+      int i = accepted[r];
       // production vertex
       zp = fPythia->event[i].zProd();
       xp = fPythia->event[i].xProd();

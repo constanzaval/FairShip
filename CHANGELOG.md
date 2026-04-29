@@ -14,16 +14,23 @@ it in future.
 
 ### Added
 
+* Add angular acceptance cut in HNL and DP generators to skip events outside the decay vessel
 * Add FileSummary to run_fixedTarget.py to save all the options for reference (#1140)
 * Add new 2026_04_01_SHiP_MainSpectrometerField_V13.root fieldmap
 
 ### Changed
 * Make artificial retina the baseline option for pattern recognition
+* `nrOfRetries()` in HNL and DP generators now counts only production failures; geometric acceptance rejections are tracked separately via `nrOfGeoRejections()`
+* Read vessel end dimensions from veto YAML config instead of hardcoding in `geometry_config.py`
 
 ### Fixed
 
-* Add missing SetPaintRadius method and proper beam smearing in DPPPythia8Generator class.
+* Add missing SetPaintRadius method and proper beam smearing in DPPythia8Generator class.
+* Fix vertex finding for upstream vertices by using stepwise extrapolation
+* Derive track fit seed from pattern recognition and first hit position instead of hard-coded coordinate (#763)
+* Replace obsolete elliptical acceptance cut with rectangular acceptance in track pattern recognition
 * Fix CI build warnings: add missing `override` specifiers, fix `Print()` and `Init()` virtual hiding, remove unused `FairShipFields` LinkDef entry
+* Remove no-effect statements (unused object creation, bare index accesses) from Python scripts
 
 ### Removed
 
